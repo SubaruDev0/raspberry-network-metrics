@@ -1,0 +1,4 @@
+# Librerías necesarias para el análisis y graficación
+pandas
+matplotlib
+numpy
