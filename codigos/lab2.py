@@ -1,11 +1,10 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+
 
 """
 Métricas disponibles (nombres para usar en METRICS):
-  "ip", "gateway",
+  "ssid", "ip", "gateway",
+  "rssi_dbm", "tx_bitrate_mbps", "rx_bitrate_mbps",
+  "freq_mhz", "channel", "link_quality",
   "rtt_avg_ms", "rtt_std_ms", "jitter_ms",
   "rx_mbps", "tx_mbps"
 """
@@ -14,14 +13,18 @@ import subprocess, time, shutil, json, re
 from typing import Optional, Tuple, Dict, Any
 
 # ===========================
-# CONFIGURACIÓN PARA CASA (Cable Ethernet)
+# HARD-CODE CONFIG (editame)
 # ===========================
-IFACE = "eth0"                    # Interfaz de red por cable
+IFACE = "wlan0"                    # Interfaz de red WiFi
+WIFI_SSID = "Sala_Hibrida"     # SSID de la red a conectar
+WIFI_PSK  = "USSqiDyJ25"      # Contraseña de la red
 
 # Elige qué métricas medir (solo estas se calcularán)
 METRICS = [
     # Identidad/red
-    "ip", "gateway",
+    "ssid", "ip", "gateway",
+    # Radio/enlace
+    "rssi_dbm", "tx_bitrate_mbps", "rx_bitrate_mbps", "freq_mhz", "channel", "link_quality",
     # Latencia/variabilidad
     "rtt_avg_ms", "rtt_std_ms", "jitter_ms",
     # Throughput interfaz (ventana)
@@ -53,7 +56,95 @@ def _run(cmd: str, timeout: int = 10):
     return p.returncode, out.strip(), err.strip()
 
 
+# ------------------------------- Conexión ------------------------------- #
+
+def connect_wifi(ssid: str, psk: Optional[str], iface: str, timeout_s: int = 30) -> bool:
+    """Conecta a una red Wi-Fi usando nmcli (si existe)."""
+    if not _cmd_exists("nmcli"):
+        print("[WARN] nmcli no disponible; saltando conexión.")
+        return False
+
+    if psk:
+        code, out, err = _run(f'nmcli dev wifi connect "{ssid}" password "{psk}" ifname {iface}')
+    else:
+        code, out, err = _run(f'nmcli dev wifi connect "{ssid}" ifname {iface}')
+    if code != 0:
+        print(f"[ERR] nmcli connect: {err or out}")
+
+    t0 = time.time()
+    while time.time() - t0 < timeout_s:
+        ssid_now = _get_wifi_ssid(iface)
+        if ssid_now == ssid:
+            return True
+        time.sleep(1)
+    return False
+
+
 # ------------------------------ Lectores base --------------------------- #
+
+def _get_wifi_ssid(iface: str) -> Optional[str]:
+    """Obtiene el SSID de la red WiFi conectada usando el comando iw"""
+    if not _cmd_exists("iw"):
+        return None
+    code, out, _ = _run(f"iw dev {iface} link")
+    if code != 0 or not out:
+        return None
+    m = re.search(r"SSID:\s*(.+)", out)
+    return m.group(1).strip() if m else None
+
+def _get_wifi_status(iface: str) -> Dict[str, Any]:
+    """Retorna dict con: ssid, freq_mhz, tx_bitrate_mbps, rx_bitrate_mbps, rssi_dbm, link_quality, channel."""
+    res: Dict[str, Any] = {
+        "ssid": None, "freq_mhz": None, "tx_bitrate_mbps": None, "rx_bitrate_mbps": None,
+        "rssi_dbm": None, "link_quality": None, "channel": None
+    }
+    if not _cmd_exists("iw"):
+        return res
+
+    code, out, _ = _run(f"iw dev {iface} link")
+    if code != 0 or not out:
+        return res
+
+    # Extrae información usando expresiones regulares
+    ssid = re.search(r"SSID:\s*(.+)", out)
+    freq = re.search(r"freq:\s*(\d+)", out)
+    txb  = re.search(r"tx bitrate:\s*([\d\.]+)\s*MBit/s", out)
+    rxb  = re.search(r"rx bitrate:\s*([\d\.]+)\s*MBit/s", out)
+    sig  = re.search(r"signal:\s*([-]?\d+)\s*dBm", out)
+
+    res["ssid"] = ssid.group(1).strip() if ssid else None
+    res["freq_mhz"] = int(freq.group(1)) if freq else None
+    res["tx_bitrate_mbps"] = float(txb.group(1)) if txb else None
+    res["rx_bitrate_mbps"] = float(rxb.group(1)) if rxb else None
+    res["rssi_dbm"] = float(sig.group(1)) if sig else None
+    res["channel"] = _parse_channel(res["freq_mhz"])
+
+    # /proc/net/wireless -> calidad 0..1
+    try:
+        with open("/proc/net/wireless") as f:
+            for line in f:
+                if iface in line:
+                    parts = line.split()
+                    qual = parts[2].replace(".", "")
+                    q = float(qual) if qual else 0.0
+                    res["link_quality"] = max(0.0, min(q / 70.0, 1.0))
+                    break
+    except Exception:
+        pass
+
+    return res
+
+def _parse_channel(freq_mhz: Optional[int]) -> Optional[int]:
+    """Convierte frecuencia MHz a canal WiFi"""
+    if not freq_mhz:
+        return None
+    if 2400 <= freq_mhz <= 2500:
+        return int(round((freq_mhz - 2412) / 5.0 + 1))
+    if 5000 <= freq_mhz <= 6000:
+        return int(round((freq_mhz - 5000) / 5.0))
+    if 5900 <= freq_mhz <= 7125:
+        return int(round((freq_mhz - 5950) / 5.0))  # aprox 6 GHz
+    return None
 
 def _get_ip_and_gateway(iface: str) -> Tuple[Optional[str], Optional[str]]:
     """Obtiene IP y gateway de la interfaz"""
@@ -123,6 +214,19 @@ def get_network_metrics_filtered() -> Dict[str, Any]:
     Ejecuta solo las mediciones presentes en METRICS y retorna un dict con esas keys.
     """
     results: Dict[str, Any] = {}
+
+    # Conexión (si no estás conectado, intenta conectarte)
+    if "ssid" in METRICS or any(k in METRICS for k in
+                                ["rssi_dbm","tx_bitrate_mbps","rx_bitrate_mbps","freq_mhz","channel","link_quality"]):
+        # Intento de conexión rápida (no falla si ya está conectado)
+        connect_wifi(WIFI_SSID, WIFI_PSK, IFACE)
+
+    # WIFI status (si se pide cualquiera de las métricas de radio o ssid)
+    if any(k in METRICS for k in ["ssid","rssi_dbm","tx_bitrate_mbps","rx_bitrate_mbps","freq_mhz","channel","link_quality"]):
+        wifi = _get_wifi_status(IFACE)
+        for k in ["ssid","rssi_dbm","tx_bitrate_mbps","rx_bitrate_mbps","freq_mhz","channel","link_quality"]:
+            if k in METRICS:
+                results[k] = wifi.get(k)
 
     # IP y gateway
     if "ip" in METRICS or "gateway" in METRICS or any(k in METRICS for k in ["rtt_avg_ms","rtt_std_ms","jitter_ms"]):

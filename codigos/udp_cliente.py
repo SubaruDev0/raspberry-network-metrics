@@ -9,7 +9,7 @@ from datetime import datetime
 # Importar las funciones de métricas
 from lab2 import get_network_metrics_filtered
 
-HOST = "127.0.0.1"  # "10.200.210.128" en la U
+HOST = "10.200.210.116"  # "10.200.210.128" en la U
 PORT = 5001  # Puerto diferente para UDP
 
 # Configuración para guardar CSV (ahora en carpeta udp/)
