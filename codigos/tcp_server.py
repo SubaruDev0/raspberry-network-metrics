@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import socket
 import time
 import random
@@ -21,9 +20,9 @@ MAX_LEN = 20
 INTERVAL_MIN = 1
 INTERVAL_MAX = 5
 
-# Guardar CSV dentro de la carpeta registros/ en la raíz del proyecto
+# Guardar CSV dentro de la carpeta registros/tcp/ en la raíz del proyecto
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CSV_DIR = os.path.join(PROJECT_ROOT, 'registros')
+CSV_DIR = os.path.join(PROJECT_ROOT, 'registros', 'tcp')
 CSV_FILENAME = os.path.join(CSV_DIR, 'metricas_servidor.csv')
 
 
@@ -34,18 +33,25 @@ def random_payload():
 
 
 def inicializar_csv():
-    """Crea el archivo CSV con los headers (asegura que exista la carpeta registros)"""
+    """Crea el archivo CSV con los headers (asegura que exista la carpeta registros/tcp)"""
     os.makedirs(CSV_DIR, exist_ok=True)
     with open(CSV_FILENAME, 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow([
-            'fecha_hora', 'tam_payload_bytes', 'protocolo',
-            'rtt_promedio_ms', 'rtt_desv_std_ms', 'jitter_ms',
-            'rx_mbps', 'tx_mbps', 'gateway'
+            'fecha_hora',
+            'tam_payload_bytes',
+            'protocolo',
+            'mensaje',  # ✨ NUEVA COLUMNA: contenido del mensaje enviado
+            'rtt_promedio_ms',
+            'rtt_desv_std_ms',
+            'jitter_ms',
+            'rx_mbps',
+            'tx_mbps',
+            'gateway'
         ])
 
 
-def guardar_metricas_csv(payload_size, protocolo="TCP"):
+def guardar_metricas_csv(payload_size, mensaje, protocolo="TCP"):
     """Guarda métricas actuales en el CSV"""
     try:
         # Obtener métricas de red
@@ -64,6 +70,7 @@ def guardar_metricas_csv(payload_size, protocolo="TCP"):
                 datetime.now().isoformat(timespec='seconds'),
                 payload_size,
                 protocolo,
+                mensaje,  # ✨ Guardar el mensaje enviado
                 metricas.get('rtt_avg_ms', 'N/A'),
                 metricas.get('rtt_std_ms', 'N/A'),
                 metricas.get('jitter_ms', 'N/A'),
@@ -83,12 +90,23 @@ def main():
     inicializar_csv()
     print(f"[INFO] CSV inicializado: {CSV_FILENAME}")
 
+    # -------------------------------------------------------------------------
+    # NOTA DE SIMILITUD: Este servidor TCP está escrito para parecerse lo máximo
+    # posible a `udp_server.py`. Las diferencias clave están marcadas con
+    # "🔄 CAMBIO TCP↔UDP:". En resumen:
+    #   - TCP: SOCK_STREAM, bind/listen/accept, conn.sendall()/conn.recv()
+    #   - UDP: SOCK_DGRAM, bind, server.sendto()/server.recvfrom(), no accept
+    # Mantuvimos idéntica la lógica de métricas, CSV y formato de mensajes.
+    # -------------------------------------------------------------------------
+
+    # 🔄 CAMBIO TCP↔UDP: creación del socket (TCP usa SOCK_STREAM)
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server.bind((HOST, PORT))
     server.listen(1)
-    print(f"[INFO] Servidor escuchando en {HOST}:{PORT}")
+    print(f"[INFO] Servidor TCP escuchando en {HOST}:{PORT}")
 
+    # 🔄 CAMBIO TCP↔UDP: en TCP hay accept() que devuelve conn y addr
     conn, addr = server.accept()
     print(f"[INFO] Cliente conectado: {addr}")
 
@@ -105,12 +123,12 @@ def main():
                 try:
                     conn.sendall((payload + "\n").encode())
 
-                    # MEDIR Y GUARDAR MÉTRICAS (lo que pide el PDF)
-                    metricas = guardar_metricas_csv(len(payload))
+                    # MEDIR Y GUARDAR MÉTRICAS (lo que pide el PDF) + el mensaje
+                    metricas = guardar_metricas_csv(len(payload), payload)
 
-                    print(f"[SEND] {len(payload)} bytes | "
-                          f"RTT: {metricas.get('rtt_avg_ms', 'N/A')}ms | "
-                          f"Jitter: {metricas.get('jitter_ms', 'N/A')}ms | "
+                    print(f"[SEND] '{payload}' ({len(payload)} bytes)  "
+                          f"RTT: {metricas.get('rtt_avg_ms', 'N/A')}ms  "
+                          f"Jitter: {metricas.get('jitter_ms', 'N/A')}ms  "
                           f"Next: {next_interval:.2f}s")
 
                 except (BrokenPipeError, ConnectionResetError):

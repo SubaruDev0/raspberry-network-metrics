@@ -1,5 +1,5 @@
 
-''' Descomentar en la U xd
+
 """
 Métricas disponibles (nombres para usar en METRICS):
   "ssid", "ip", "gateway",
@@ -272,4 +272,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-'''
