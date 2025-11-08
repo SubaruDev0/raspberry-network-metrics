@@ -979,8 +979,6 @@ Esto es **normal** si estás probando en localhost.
 
 ---
 
-### Para la Presentación
-
 **Puntos clave a mencionar:**
 - ✅ Implementamos TCP y UDP
 - ✅ Solo 4-5 líneas de diferencia entre ambos
@@ -1008,8 +1006,6 @@ Ahora el equipo completo entiende:
 - ✅ Cómo se generan los CSV
 - ✅ Cómo se crean los gráficos
 - ✅ El flujo completo de ejecución
-
-**¡Éxito en la presentación! 🚀**
 
 ---
 
