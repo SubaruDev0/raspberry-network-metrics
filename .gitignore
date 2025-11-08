@@ -1,0 +1,80 @@
+# .gitignore para proyecto Raspberry Pi / Python (raspberry-network-metrics)
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Icon?
+
+# Entornos virtuales / Python
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+.Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+pip-wheel-metadata/
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.mypy_cache/
+.pyre/
+
+# Archivos de configuración/local
+.env
+.env.*
+credentials.json
+secrets.json
+
+# Logs y datos generados
+*.log
+logs/
+*.pid
+data/
+tmp/
+cache/
+
+# IDEs / editores
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Node (por si hay frontend)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# Docker / CI
+docker-compose.override.yml
+.envrc
+
+# Claves y certificados
+*.pem
+*.key
+id_rsa
+id_rsa.pub
+
+# Archivos binarios / compilados
+*.o
+*.obj
+*.exe
+*.dll
+*.class
+
+# Otros archivos temporales
+*.swp
+*.swo
+*~
